@@ -8,3 +8,5 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# Colab upload artifact (built by tools/build_bear_bull_debate_zip.py)
+bear_bull_debate_src.zip

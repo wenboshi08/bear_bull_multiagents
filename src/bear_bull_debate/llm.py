@@ -15,8 +15,20 @@ RETRYABLE_EXCEPTIONS = (APIConnectionError, APITimeoutError, RateLimitError)
 
 
 def make_llm(model: str, temperature: float = 0.0) -> ChatOpenAI:
-    """Create a ChatOpenAI instance for the given model name."""
+    """Create a ChatOpenAI instance for the given model name.
+
+    Honors ``OPENAI_BASE_URL`` (for OpenAI-compatible providers such as DeepSeek
+    or Qwen/DashScope) and ``OPENAI_API_KEY`` explicitly, so the same code path
+    works in Colab, scripts, and the FastAPI server without relying on
+    ``ChatOpenAI``'s implicit env-var probing.
+    """
     kwargs = {"model": model, "temperature": temperature}
+    base_url = os.getenv("OPENAI_BASE_URL")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if base_url:
+        kwargs["base_url"] = base_url
+    if api_key:
+        kwargs["api_key"] = api_key
     if os.getenv("VERBOSE") == "1":
         from langchain_core.callbacks import ConsoleCallbackHandler
 

@@ -2,7 +2,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from bear_bull_debate.llm import ainvoke_with_retry
+from bear_bull_debate.llm import ainvoke_with_retry, make_llm
 
 
 class FlakyLLM:
@@ -37,3 +37,19 @@ async def test_does_not_retry_non_transient_errors():
     with pytest.raises(ValueError):
         await ainvoke_with_retry(llm, [])
     assert llm.calls == 1
+
+
+def test_make_llm_injects_base_url_and_api_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    llm = make_llm("deepseek-chat")
+    assert llm.openai_api_base == "https://api.deepseek.com"
+    assert llm.openai_api_key.get_secret_value() == "test-key"
+
+
+def test_make_llm_omits_base_url_when_unset(monkeypatch):
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    llm = make_llm("gpt-4o-mini")
+    assert llm.openai_api_base is None
+    assert llm.openai_api_key.get_secret_value() == "test-key"

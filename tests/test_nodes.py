@@ -122,6 +122,34 @@ async def test_researcher_caps_tool_loop():
     assert len(tool_messages) == 2
 
 
+async def test_researcher_cap_forces_final_argument():
+    settings = Settings(max_tool_rounds=2, checkpointer_uri=None)
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_stock_price",
+                    "args": {"company": "AAPL"},
+                    "id": f"call_{i}",
+                    "type": "tool_call",
+                }
+            ],
+        )
+        for i in range(2)
+    ]
+    # After the loop exhausts, the node forces one final synthesis call.
+    responses.append(AIMessage(content="Final bear thesis (synthesized)"))
+    llm = FakeMessagesListChatModel(responses=responses)
+    node = make_researcher_node("bear", llm, TOOLS, settings)
+    result = await node(make_state())
+
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 2
+    # The turn must end with an argument, not a dangling ToolMessage.
+    assert result["messages"][-1].content == "Final bear thesis (synthesized)"
+
+
 async def test_researcher_handles_malformed_tool_call(settings):
     from types import SimpleNamespace
 

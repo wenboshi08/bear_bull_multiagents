@@ -45,6 +45,7 @@ def make_researcher_node(
         new_messages: list[BaseMessage] = []
         tool_logs: list[str] = []
 
+        exhausted = False
         for _ in range(settings.max_tool_rounds):
             response = await ainvoke_with_retry(llm, call_messages)
             new_messages.append(response)
@@ -75,10 +76,25 @@ def make_researcher_node(
                 new_messages.append(tool_msg)
                 call_messages.append(tool_msg)
         else:
+            exhausted = True
             logger.warning(
-                "Researcher node reached max_tool_rounds=%d; stopping tool calls",
+                "Researcher node reached max_tool_rounds=%d; forcing a final argument",
                 settings.max_tool_rounds,
             )
+
+        if exhausted:
+            # The model kept requesting tools. Force one final synthesis so the
+            # turn ends with an actual argument rather than a dangling ToolMessage.
+            call_messages.append(
+                SystemMessage(
+                    content=(
+                        "You have reached the tool-call limit. Stop calling tools and "
+                        "deliver your final argument now, based on the data gathered above."
+                    )
+                )
+            )
+            final = await ainvoke_with_retry(llm, call_messages)
+            new_messages.append(final)
 
         result: dict = {"messages": new_messages}
         if role == "bull":
