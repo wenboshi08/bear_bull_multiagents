@@ -1,3 +1,5 @@
+import os
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
@@ -14,7 +16,12 @@ RETRYABLE_EXCEPTIONS = (APIConnectionError, APITimeoutError, RateLimitError)
 
 def make_llm(model: str, temperature: float = 0.0) -> ChatOpenAI:
     """Create a ChatOpenAI instance for the given model name."""
-    return ChatOpenAI(model=model, temperature=temperature)
+    kwargs = {"model": model, "temperature": temperature}
+    if os.getenv("VERBOSE") == "1":
+        from langchain_core.callbacks import ConsoleCallbackHandler
+
+        kwargs["callbacks"] = [ConsoleCallbackHandler()]
+    return ChatOpenAI(**kwargs)
 
 
 @retry(

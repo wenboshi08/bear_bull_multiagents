@@ -19,6 +19,7 @@ from .prompts import (
     SUMMARY_SYSTEM_PROMPT,
 )
 from .state import DebateState
+from .tracing import trace
 
 
 def make_researcher_node(
@@ -74,6 +75,7 @@ def make_researcher_node(
             result["tool_outputs"] = tool_logs
         return result
 
+    node = trace(f"{role}_researcher")(node)
     return node
 
 
@@ -103,6 +105,7 @@ def make_summarize_node(summary_llm: Any, settings: Settings) -> Callable:
         remove = [RemoveMessage(id=m.id) for m in old if m.id]
         return {"summary": str(resp.content), "messages": remove}
 
+    node = trace("summarize")(node)
     return node
 
 
@@ -127,4 +130,5 @@ def make_judge_node(judge_llm: Any) -> Callable:
         )
         return {"messages": [resp]}
 
+    node = trace("judge")(node)
     return node
