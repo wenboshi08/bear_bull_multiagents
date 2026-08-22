@@ -75,3 +75,32 @@ def make_researcher_node(
         return result
 
     return node
+
+
+def _format_messages(messages: list[BaseMessage]) -> str:
+    return "\n".join(f"{type(m).__name__}: {m.content}" for m in messages)
+
+
+def make_summarize_node(summary_llm: Any, settings: Settings) -> Callable:
+    """Compacts old messages into a summary and frees them via RemoveMessage."""
+
+    async def node(state: DebateState) -> dict:
+        messages = list(state["messages"])
+        if len(messages) <= settings.history_window:
+            return {"summary": state["summary"]}
+
+        old = messages[: -settings.history_window]
+
+        user = (
+            f"Previous summary:\n{state['summary'] or '(none)'}\n\n"
+            f"New messages to summarize:\n{_format_messages(old)}"
+        )
+        resp = await ainvoke_with_retry(
+            summary_llm,
+            [SystemMessage(content=SUMMARY_SYSTEM_PROMPT), HumanMessage(content=user)],
+        )
+
+        remove = [RemoveMessage(id=m.id) for m in old if m.id]
+        return {"summary": str(resp.content), "messages": remove}
+
+    return node

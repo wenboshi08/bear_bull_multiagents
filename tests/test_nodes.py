@@ -1,7 +1,7 @@
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 
-from bear_bull_debate.nodes import make_researcher_node
+from bear_bull_debate.nodes import make_researcher_node, make_summarize_node
 from bear_bull_debate.tools import TOOLS
 
 
@@ -91,3 +91,29 @@ async def test_bull_increments_round(settings):
     node = make_researcher_node("bull", llm, TOOLS, settings)
     result = await node(make_state(round=1))
     assert result["round"] == 2
+
+
+async def test_summarize_removes_old_messages(settings):
+    old = [
+        HumanMessage(content="Debate topic: AAPL", id="s1"),
+        AIMessage(content="Bear R1", id="m1"),
+        AIMessage(content="Bull R1", id="m2"),
+        AIMessage(content="Bear R2", id="m3"),
+        AIMessage(content="Bull R2", id="m4"),
+    ]
+    llm = FakeMessagesListChatModel(responses=[AIMessage(content="Compressed summary")])
+    node = make_summarize_node(llm, settings)
+    result = await node(make_state(messages=old, summary="prior"))
+
+    assert result["summary"] == "Compressed summary"
+    removed_ids = {m.id for m in result["messages"] if isinstance(m, RemoveMessage)}
+    # history_window=4 keeps the last 4 (m1..m4); only the seed "s1" is removed
+    assert removed_ids == {"s1"}
+
+
+async def test_summarize_noop_when_short(settings):
+    short = [HumanMessage(content="hi", id="s1"), AIMessage(content="a", id="m1")]
+    llm = FakeMessagesListChatModel(responses=[AIMessage(content="should not be called")])
+    node = make_summarize_node(llm, settings)
+    result = await node(make_state(messages=short, summary="prior"))
+    assert result["summary"] == "prior"
