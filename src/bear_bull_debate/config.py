@@ -11,6 +11,7 @@ class Settings:
     summary_model: str = "gpt-4o-mini"
     history_window: int = 4
     message_threshold: int = 12
+    max_tool_rounds: int = 5
     checkpointer_uri: str | None = None
 
     @classmethod
@@ -23,5 +24,6 @@ class Settings:
             summary_model=os.getenv("SUMMARY_MODEL", "gpt-4o-mini"),
             history_window=int(os.getenv("HISTORY_WINDOW", "4")),
             message_threshold=int(os.getenv("MESSAGE_THRESHOLD", "12")),
+            max_tool_rounds=int(os.getenv("MAX_TOOL_ROUNDS", "5")),
             checkpointer_uri=os.getenv("DATABASE_URL") or None,
         )

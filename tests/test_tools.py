@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.tools import ToolException
 
-from bear_bull_debate.tools import get_financials, get_stock_price, get_news_sentiment
+from bear_bull_debate.tools import get_financials, get_news_sentiment, get_stock_price
 
 
 def test_get_stock_price_returns_mock_value():

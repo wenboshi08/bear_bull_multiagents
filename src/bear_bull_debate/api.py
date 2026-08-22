@@ -16,7 +16,7 @@ class DebateRequest(BaseModel):
         ...,
         min_length=1,
         max_length=50,
-        pattern=r"^[a-zA-Z0-9\s\-\.]+$",
+        pattern=r"^[a-zA-Z0-9 .\-]+$",
     )
     thread_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     max_rounds: int = Field(default=2, ge=1, le=5)

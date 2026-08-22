@@ -9,7 +9,7 @@ coordination are the focus.
 ```bash
 uv sync --extra dev
 cp .env.example .env   # set OPENAI_API_KEY
-uv run uvicorn bear_bull_debate.api:app --reload
+uv run uvicorn bear_bull_debate.api:app --env-file .env --reload
 curl -X POST http://127.0.0.1:8000/api/v1/debate \
   -H 'Content-Type: application/json' \
   -d '{"company": "AAPL", "max_rounds": 2}'
@@ -27,7 +27,7 @@ uv run pytest -q
 uv sync --extra dev --extra postgres
 docker compose up -d postgres
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/debate
-uv run uvicorn bear_bull_debate.api:app --reload
+uv run uvicorn bear_bull_debate.api:app --env-file .env --reload
 ```
 
 The app lazily imports `AsyncPostgresSaver` only when `DATABASE_URL` is set and runs

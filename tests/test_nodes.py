@@ -1,6 +1,7 @@
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 
+from bear_bull_debate.config import Settings
 from bear_bull_debate.nodes import (
     make_judge_node,
     make_researcher_node,
@@ -95,6 +96,57 @@ async def test_bull_increments_round(settings):
     node = make_researcher_node("bull", llm, TOOLS, settings)
     result = await node(make_state(round=1))
     assert result["round"] == 2
+
+
+async def test_researcher_caps_tool_loop():
+    settings = Settings(max_tool_rounds=2, checkpointer_uri=None)
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_stock_price",
+                    "args": {"company": "AAPL"},
+                    "id": f"call_{i}",
+                    "type": "tool_call",
+                }
+            ],
+        )
+        for i in range(10)
+    ]
+    llm = FakeMessagesListChatModel(responses=responses)
+    node = make_researcher_node("bear", llm, TOOLS, settings)
+    result = await node(make_state())
+
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 2
+
+
+async def test_researcher_handles_malformed_tool_call(settings):
+    from types import SimpleNamespace
+
+    class _MalformedLLM:
+        def __init__(self, follow_up):
+            self._follow_up = follow_up
+            self._calls = 0
+
+        async def ainvoke(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                return SimpleNamespace(
+                    content="", tool_calls=[{"args": {"company": "AAPL"}}]
+                )
+            return self._follow_up
+
+    llm = _MalformedLLM(follow_up=AIMessage(content="Recovered from malformed tool call."))
+    node = make_researcher_node("bear", llm, TOOLS, settings)
+    result = await node(make_state())
+
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 1
+    assert "Unknown tool" in tool_messages[0].content
+    assert tool_messages[0].name == "unknown"
+    assert result["messages"][-1].content == "Recovered from malformed tool call."
 
 
 async def test_summarize_removes_old_messages(settings):

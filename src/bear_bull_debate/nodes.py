@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -21,6 +22,8 @@ from .prompts import (
 from .state import DebateState
 from .tracing import trace
 
+logger = logging.getLogger(__name__)
+
 
 def make_researcher_node(
     role: str, llm: Any, tools: list[Any], settings: Settings
@@ -42,7 +45,7 @@ def make_researcher_node(
         new_messages: list[BaseMessage] = []
         tool_logs: list[str] = []
 
-        while True:
+        for _ in range(settings.max_tool_rounds):
             response = await ainvoke_with_retry(llm, call_messages)
             new_messages.append(response)
             call_messages.append(response)
@@ -52,8 +55,8 @@ def make_researcher_node(
                 break
 
             for tc in tool_calls:
-                name = tc["name"]
                 try:
+                    name = tc["name"]
                     tool = tools_by_name[name]
                     raw = await tool.ainvoke(tc["args"])
                     content = str(raw)
@@ -61,12 +64,21 @@ def make_researcher_node(
                 except ToolException as exc:
                     content = f"Tool error: {exc}. Please adjust your parameters and retry."
                 except KeyError:
-                    content = f"Unknown tool '{name}'. Use only the provided tools."
+                    content = f"Unknown tool '{tc.get('name', 'unknown')}'. Use only the provided tools."
+                except Exception:  # noqa: BLE001 - degrade gracefully on malformed tool calls
+                    content = f"Unexpected error calling tool '{tc.get('name', 'unknown')}'."
                 tool_msg = ToolMessage(
-                    content=content, tool_call_id=tc["id"], name=name
+                    content=content,
+                    tool_call_id=tc.get("id", ""),
+                    name=tc.get("name", "unknown"),
                 )
                 new_messages.append(tool_msg)
                 call_messages.append(tool_msg)
+        else:
+            logger.warning(
+                "Researcher node reached max_tool_rounds=%d; stopping tool calls",
+                settings.max_tool_rounds,
+            )
 
         result: dict = {"messages": new_messages}
         if role == "bull":
