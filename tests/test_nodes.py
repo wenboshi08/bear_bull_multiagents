@@ -1,7 +1,11 @@
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 
-from bear_bull_debate.nodes import make_researcher_node, make_summarize_node
+from bear_bull_debate.nodes import (
+    make_judge_node,
+    make_researcher_node,
+    make_summarize_node,
+)
 from bear_bull_debate.tools import TOOLS
 
 
@@ -117,3 +121,10 @@ async def test_summarize_noop_when_short(settings):
     node = make_summarize_node(llm, settings)
     result = await node(make_state(messages=short, summary="prior"))
     assert result["summary"] == "prior"
+
+
+async def test_judge_appends_report(settings):
+    llm = FakeMessagesListChatModel(responses=[AIMessage(content="## Verdict\nNeutral")])
+    node = make_judge_node(llm)
+    result = await node(make_state())
+    assert result["messages"][-1].content.startswith("## Verdict")

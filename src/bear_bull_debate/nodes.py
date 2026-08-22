@@ -104,3 +104,27 @@ def make_summarize_node(summary_llm: Any, settings: Settings) -> Callable:
         return {"summary": str(resp.content), "messages": remove}
 
     return node
+
+
+def make_judge_node(judge_llm: Any) -> Callable:
+    """Judge reads summary + recent messages and writes the final report."""
+
+    async def node(state: DebateState) -> dict:
+        context_parts: list[str] = []
+        if state["summary"]:
+            context_parts.append(f"### Earlier debate summary\n{state['summary']}")
+        context_parts.append(f"### Recent debate\n{_format_messages(state['messages'])}")
+        context_parts.append(f"### Company under debate\n{state['company']}")
+
+        resp = await ainvoke_with_retry(
+            judge_llm,
+            [
+                SystemMessage(
+                    content=JUDGE_SYSTEM_PROMPT.format(company=state["company"])
+                ),
+                HumanMessage(content="\n\n".join(context_parts)),
+            ],
+        )
+        return {"messages": [resp]}
+
+    return node
