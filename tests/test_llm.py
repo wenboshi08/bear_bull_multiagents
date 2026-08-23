@@ -60,3 +60,15 @@ def test_make_llm_base_url_param_overrides_env(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     llm = make_llm("deepseek-v4-flash", base_url="https://api.deepseek.com")
     assert llm.openai_api_base == "https://api.deepseek.com"
+
+
+def test_make_llm_disables_thinking_for_deepseek(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    llm = make_llm("deepseek-v4-flash", base_url="https://api.deepseek.com")
+    assert llm.extra_body == {"thinking": {"type": "disabled"}}
+
+
+def test_make_llm_no_thinking_param_for_non_deepseek(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    llm = make_llm("gpt-4o-mini", base_url="https://api.openai.com/v1")
+    assert llm.extra_body is None

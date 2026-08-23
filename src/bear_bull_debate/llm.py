@@ -24,6 +24,12 @@ def make_llm(
     is taken from ``OPENAI_API_KEY``. This makes OpenAI-compatible providers
     (DeepSeek / Qwen) work in Colab, scripts, and the FastAPI server without
     relying on ``ChatOpenAI``'s implicit env-var probing.
+
+    DeepSeek v4 models default to *thinking mode*; when ``tools`` are attached,
+    the model's ``reasoning_content`` must be passed back in every follow-up
+    request, but ``ChatOpenAI`` neither extracts nor round-trips that field, which
+    makes the API reject the turn with HTTP 400. The debate only needs the final
+    argument, so we disable thinking for DeepSeek endpoints via ``extra_body``.
     """
     kwargs = {"model": model, "temperature": temperature}
     resolved_base_url = base_url or os.getenv(
@@ -32,6 +38,8 @@ def make_llm(
     api_key = os.getenv("OPENAI_API_KEY")
     if resolved_base_url:
         kwargs["base_url"] = resolved_base_url
+    if "deepseek" in (resolved_base_url or ""):
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     if api_key:
         kwargs["api_key"] = api_key
     if os.getenv("VERBOSE") == "1":
