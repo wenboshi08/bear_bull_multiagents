@@ -1,8 +1,15 @@
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
 
 from bear_bull_debate.config import Settings
 from bear_bull_debate.nodes import (
+    _strip_orphaned_tool_messages,
     make_judge_node,
     make_researcher_node,
     make_summarize_node,
@@ -208,6 +215,33 @@ async def test_judge_appends_report(settings):
     node = make_judge_node(llm)
     result = await node(make_state())
     assert result["messages"][-1].content.startswith("## Verdict")
+
+
+def test_strip_orphaned_tool_messages():
+    """Defense-in-depth: ToolMessages without a preceding tool_calls AIMessage
+    are dropped before the list reaches the API (which would 400 otherwise)."""
+    tool_call_ai = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_stock_price", "args": {"company": "AAPL"}, "id": "c1", "type": "tool_call"}
+        ],
+        id="tc",
+    )
+    paired_tool = ToolMessage(content="price", tool_call_id="c1", name="get_stock_price", id="t1")
+    final_arg = AIMessage(content="arg", id="arg")
+    orphan_1 = ToolMessage(content="orphan before any tool_calls", tool_call_id="cX", name="x", id="o1")
+    orphan_2 = ToolMessage(content="orphan after final arg", tool_call_id="cY", name="x", id="o2")
+
+    messages = [
+        SystemMessage(content="sys", id="sys"),
+        orphan_1,
+        tool_call_ai,
+        paired_tool,
+        final_arg,
+        orphan_2,
+    ]
+    sanitized = _strip_orphaned_tool_messages(messages)
+    assert [m.id for m in sanitized] == ["sys", "tc", "t1", "arg"]
 
 
 class CapturingLLM:

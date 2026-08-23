@@ -49,6 +49,37 @@ def _safe_window(messages: list[BaseMessage], max_count: int) -> list[BaseMessag
     return window
 
 
+def _strip_orphaned_tool_messages(
+    messages: list[BaseMessage],
+) -> list[BaseMessage]:
+    """Defense-in-depth: drop any ``ToolMessage`` whose preceding assistant
+    message does not carry ``tool_calls``.
+
+    ``_safe_window`` keeps windows from *starting* with an orphaned tool
+    message, but this sanitizer guarantees the protocol invariant on the
+    entire list right before it is sent to the API: a ``tool``-role message
+    is only kept when the most recent assistant message had ``tool_calls``
+    (mirroring the OpenAI/DeepSeek validation that triggers HTTP 400).
+    """
+    sanitized: list[BaseMessage] = []
+    last_assistant_had_tool_calls = False
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            if last_assistant_had_tool_calls:
+                sanitized.append(message)
+            else:
+                logger.warning(
+                    "Dropping orphaned ToolMessage (no preceding tool_calls): %s",
+                    message.content[:80],
+                )
+        else:
+            sanitized.append(message)
+            last_assistant_had_tool_calls = bool(
+                getattr(message, "tool_calls", None)
+            )
+    return sanitized
+
+
 def make_researcher_node(
     role: str, llm: Any, tools: list[Any], settings: Settings
 ) -> Callable:
@@ -71,6 +102,7 @@ def make_researcher_node(
 
         exhausted = False
         for _ in range(settings.max_tool_rounds):
+            call_messages = _strip_orphaned_tool_messages(call_messages)
             response = await ainvoke_with_retry(llm, call_messages)
             new_messages.append(response)
             call_messages.append(response)
