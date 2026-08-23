@@ -208,3 +208,108 @@ async def test_judge_appends_report(settings):
     node = make_judge_node(llm)
     result = await node(make_state())
     assert result["messages"][-1].content.startswith("## Verdict")
+
+
+class CapturingLLM:
+    """Fake LLM that records every message list it is called with."""
+
+    def __init__(self, response):
+        self.response = response
+        self.seen = []
+
+    async def ainvoke(self, messages):
+        self.seen.append(list(messages))
+        return self.response
+
+
+async def test_researcher_window_keeps_tool_call_pairing():
+    # State where the naive last-4 history slice starts with a ToolMessage
+    # whose AIMessage(tool_calls) falls outside the window. _safe_window must
+    # extend left so the LLM never sees an orphaned ToolMessage (which the
+    # OpenAI/DeepSeek API rejects with HTTP 400).
+    settings = Settings(history_window=4, checkpointer_uri=None)
+    state_messages = [
+        HumanMessage(content="Debate topic: AAPL", id="seed"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_stock_price",
+                    "args": {"company": "AAPL"},
+                    "id": "c1",
+                    "type": "tool_call",
+                }
+            ],
+            id="m_tc1",
+        ),
+        ToolMessage(
+            content="AAPL latest price: $123.45 (mock)",
+            tool_call_id="c1",
+            name="get_stock_price",
+            id="m_t1",
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_financials",
+                    "args": {"company": "AAPL"},
+                    "id": "c2",
+                    "type": "tool_call",
+                }
+            ],
+            id="m_tc2",
+        ),
+        ToolMessage(
+            content="AAPL FY revenue: $10.0B (mock)",
+            tool_call_id="c2",
+            name="get_financials",
+            id="m_t2",
+        ),
+        AIMessage(content="Bear final argument", id="m_final"),
+    ]
+    llm = CapturingLLM(response=AIMessage(content="Bull rebuttal"))
+    node = make_researcher_node("bull", llm, TOOLS, settings)
+    await node(make_state(messages=state_messages, round=1))
+
+    seen = llm.seen[0]
+    # Skip system/seed prefix; the first history message must not be a ToolMessage.
+    first = next(m for m in seen if m.type in ("ai", "tool", "human"))
+    assert first.type != "tool"
+    assert first.id == "m_tc1"  # window extended left to keep the pairing
+
+
+async def test_summarize_keeps_tool_call_pairing():
+    # The naive keep-window (last 2) would start with ToolMessage m_t1 whose
+    # AIMessage(tool_calls) m_tc is in the removed prefix. _safe_window must
+    # keep m_tc so the surviving messages stay protocol-valid.
+    settings = Settings(history_window=2, checkpointer_uri=None)
+    messages = [
+        HumanMessage(content="Debate topic: AAPL", id="s1"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_stock_price",
+                    "args": {"company": "AAPL"},
+                    "id": "c1",
+                    "type": "tool_call",
+                }
+            ],
+            id="m_tc",
+        ),
+        ToolMessage(
+            content="AAPL latest price: $123.45 (mock)",
+            tool_call_id="c1",
+            name="get_stock_price",
+            id="m_t1",
+        ),
+        AIMessage(content="Bear final argument", id="m_arg"),
+    ]
+    llm = FakeMessagesListChatModel(responses=[AIMessage(content="summary")])
+    node = make_summarize_node(llm, settings)
+    result = await node(make_state(messages=messages, summary="prior"))
+
+    removed_ids = {m.id for m in result["messages"] if isinstance(m, RemoveMessage)}
+    # Only the seed is removed; m_t1 survives WITH its m_tc predecessor.
+    assert removed_ids == {"s1"}

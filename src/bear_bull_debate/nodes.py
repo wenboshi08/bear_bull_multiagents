@@ -25,6 +25,30 @@ from .tracing import trace
 logger = logging.getLogger(__name__)
 
 
+def _safe_window(messages: list[BaseMessage], max_count: int) -> list[BaseMessage]:
+    """Return the trailing ``max_count`` messages, extended leftward so the
+    window never starts with an orphaned ``ToolMessage``.
+
+    OpenAI-compatible APIs reject a ``tool``-role message that does not follow
+    the ``AIMessage(tool_calls)`` it answers (HTTP 400 "Messages with role
+    'tool' must be a response to a preceding message with 'tool_calls'").
+    Any slice of the conversation must therefore keep each ``ToolMessage``
+    paired with its preceding tool-calling ``AIMessage``.
+    """
+    if max_count <= 0 or not messages:
+        return []
+    window = messages[-max_count:]
+    extra = 0
+    while (
+        window
+        and isinstance(window[0], ToolMessage)
+        and len(messages) - max_count - extra > 0
+    ):
+        extra += 1
+        window = messages[-max_count - extra :]
+    return window
+
+
 def make_researcher_node(
     role: str, llm: Any, tools: list[Any], settings: Settings
 ) -> Callable:
@@ -34,7 +58,7 @@ def make_researcher_node(
 
     async def node(state: DebateState) -> dict:
         system = SystemMessage(content=system_tpl.format(company=state["company"]))
-        history = list(state["messages"])[-settings.history_window :]
+        history = _safe_window(list(state["messages"]), settings.history_window)
         seed: list[BaseMessage] = [system]
         if state["summary"]:
             seed.append(
@@ -119,7 +143,10 @@ def make_summarize_node(summary_llm: Any, settings: Settings) -> Callable:
         if len(messages) <= settings.history_window:
             return {"summary": state["summary"]}
 
-        old = messages[: -settings.history_window]
+        # Keep a safe trailing window (never starting with an orphaned
+        # ToolMessage); everything before it gets summarized and removed.
+        keep = _safe_window(messages, settings.history_window)
+        old = messages[: len(messages) - len(keep)]
 
         user = (
             f"Previous summary:\n{state['summary'] or '(none)'}\n\n"
