@@ -14,19 +14,24 @@ from tenacity import (
 RETRYABLE_EXCEPTIONS = (APIConnectionError, APITimeoutError, RateLimitError)
 
 
-def make_llm(model: str, temperature: float = 0.0) -> ChatOpenAI:
+def make_llm(
+    model: str, temperature: float = 0.0, base_url: str | None = None
+) -> ChatOpenAI:
     """Create a ChatOpenAI instance for the given model name.
 
-    Honors ``OPENAI_BASE_URL`` (for OpenAI-compatible providers such as DeepSeek
-    or Qwen/DashScope) and ``OPENAI_API_KEY`` explicitly, so the same code path
-    works in Colab, scripts, and the FastAPI server without relying on
-    ``ChatOpenAI``'s implicit env-var probing.
+    The endpoint resolves as: explicit ``base_url`` argument > ``OPENAI_BASE_URL``
+    env var > DeepSeek's public endpoint (``https://api.deepseek.com``). The API key
+    is taken from ``OPENAI_API_KEY``. This makes OpenAI-compatible providers
+    (DeepSeek / Qwen) work in Colab, scripts, and the FastAPI server without
+    relying on ``ChatOpenAI``'s implicit env-var probing.
     """
     kwargs = {"model": model, "temperature": temperature}
-    base_url = os.getenv("OPENAI_BASE_URL")
+    resolved_base_url = base_url or os.getenv(
+        "OPENAI_BASE_URL", "https://api.deepseek.com"
+    )
     api_key = os.getenv("OPENAI_API_KEY")
-    if base_url:
-        kwargs["base_url"] = base_url
+    if resolved_base_url:
+        kwargs["base_url"] = resolved_base_url
     if api_key:
         kwargs["api_key"] = api_key
     if os.getenv("VERBOSE") == "1":

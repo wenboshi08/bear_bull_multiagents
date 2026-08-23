@@ -18,10 +18,20 @@ def build_graph(
 ):
     """Assemble the debate StateGraph."""
     models = models or {}
-    bear_llm = models.get("bear") or make_llm(settings.bear_model).bind_tools(TOOLS)
-    bull_llm = models.get("bull") or make_llm(settings.bull_model).bind_tools(TOOLS)
-    judge_llm = models.get("judge") or make_llm(settings.judge_model)
-    summary_llm = models.get("summary") or make_llm(settings.summary_model)
+    bear_llm = (
+        models.get("bear")
+        or make_llm(settings.bear_model, base_url=settings.base_url).bind_tools(TOOLS)
+    )
+    bull_llm = (
+        models.get("bull")
+        or make_llm(settings.bull_model, base_url=settings.base_url).bind_tools(TOOLS)
+    )
+    judge_llm = models.get("judge") or make_llm(
+        settings.judge_model, base_url=settings.base_url
+    )
+    summary_llm = models.get("summary") or make_llm(
+        settings.summary_model, base_url=settings.base_url
+    )
 
     builder = StateGraph(DebateState)
     builder.add_node("bear", make_researcher_node("bear", bear_llm, TOOLS, settings))

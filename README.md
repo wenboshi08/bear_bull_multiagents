@@ -11,7 +11,7 @@ LangGraph usage).
 
 ```bash
 uv sync --extra dev
-cp .env.example .env   # set OPENAI_API_KEY
+cp .env.example .env   # set OPENAI_API_KEY (defaults to DeepSeek: deepseek-v4-flash/pro)
 uv run uvicorn bear_bull_debate.api:app --env-file .env --reload
 curl -X POST http://127.0.0.1:8000/api/v1/debate \
   -H 'Content-Type: application/json' \
@@ -45,17 +45,18 @@ python tools/build_bear_bull_debate_zip.py
 `bear_bull_debate_src.zip` when the notebook prompts (or zip the whole project — the
 notebook auto-locates the package).
 
-OpenAI-compatible providers (DeepSeek / Qwen) are supported via `OPENAI_BASE_URL`.
-**Important:** your API key must match the provider. A DeepSeek key sent to OpenAI's
-default endpoint is rejected with a 401 (`Incorrect API key provided`). Set all of:
+The default provider is **DeepSeek** (`deepseek-v4-flash` for Bear/Bull/Summarize,
+`deepseek-v4-pro` for Judge). To switch providers, override the env vars — your API
+key must match the provider. A DeepSeek key sent to OpenAI's default endpoint is
+rejected with a 401 (`Incorrect API key provided`). Example overrides:
 
 ```bash
 export OPENAI_API_KEY=sk-your-deepseek-key
 export OPENAI_BASE_URL=https://api.deepseek.com
-export BEAR_MODEL=deepseek-chat
-export BULL_MODEL=deepseek-chat
-export JUDGE_MODEL=deepseek-chat
-export SUMMARY_MODEL=deepseek-chat
+export BEAR_MODEL=deepseek-v4-flash
+export BULL_MODEL=deepseek-v4-flash
+export JUDGE_MODEL=deepseek-v4-pro
+export SUMMARY_MODEL=deepseek-v4-flash
 ```
 
 In the Colab notebook, just pick the provider in cell 3 (OpenAI / DeepSeek /
