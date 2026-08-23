@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.messages import (
+    AIMessage,
     BaseMessage,
     HumanMessage,
     RemoveMessage,
@@ -80,6 +81,43 @@ def _strip_orphaned_tool_messages(
     return sanitized
 
 
+def _merge_consecutive_assistant_messages(
+    messages: list[BaseMessage],
+) -> list[BaseMessage]:
+    """Collapse consecutive assistant messages into a single one.
+
+    DeepSeek v4 Flash enforces strict role alternation and rejects a message
+    list containing two consecutive assistant messages with HTTP 400
+    ("Messages with role 'tool' must be a response to a preceding message
+    with 'tool_calls'"). Debate turns naturally end with an assistant
+    argument immediately followed by the next turn's assistant tool call, so
+    adjacent AIMessages are merged (content concatenated, ``tool_calls``
+    combined) before the list is sent to the API. Merging is only performed
+    when the earlier assistant has no ``tool_calls``, so no tool response
+    pairing is ever broken.
+    """
+    if not messages:
+        return messages
+    merged: list[BaseMessage] = [messages[0]]
+    for message in messages[1:]:
+        previous = merged[-1]
+        if (
+            isinstance(previous, AIMessage)
+            and isinstance(message, AIMessage)
+            and not (previous.tool_calls or [])
+        ):
+            contents = [c for c in (previous.content, message.content) if c]
+            merged[-1] = AIMessage(
+                content="\n\n".join(contents) if contents else "",
+                tool_calls=list(message.tool_calls or []),
+                id=previous.id,
+                name=previous.name,
+            )
+        else:
+            merged.append(message)
+    return merged
+
+
 def make_researcher_node(
     role: str, llm: Any, tools: list[Any], settings: Settings
 ) -> Callable:
@@ -102,7 +140,9 @@ def make_researcher_node(
 
         exhausted = False
         for _ in range(settings.max_tool_rounds):
-            call_messages = _strip_orphaned_tool_messages(call_messages)
+            call_messages = _merge_consecutive_assistant_messages(
+                _strip_orphaned_tool_messages(call_messages)
+            )
             response = await ainvoke_with_retry(llm, call_messages)
             new_messages.append(response)
             call_messages.append(response)

@@ -9,6 +9,7 @@ from langchain_core.messages import (
 
 from bear_bull_debate.config import Settings
 from bear_bull_debate.nodes import (
+    _merge_consecutive_assistant_messages,
     _strip_orphaned_tool_messages,
     make_judge_node,
     make_researcher_node,
@@ -242,6 +243,97 @@ def test_strip_orphaned_tool_messages():
     ]
     sanitized = _strip_orphaned_tool_messages(messages)
     assert [m.id for m in sanitized] == ["sys", "tc", "t1", "arg"]
+
+
+def test_merge_consecutive_assistant_messages():
+    """DeepSeek v4 Flash rejects two consecutive assistant messages (HTTP 400
+    'tool must be a response to a preceding message with tool_calls'); the
+    merge collapses them while preserving tool pairing."""
+    tc1 = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_stock_price", "args": {"company": "AAPL"}, "id": "call_1", "type": "tool_call"}
+        ],
+        id="tc1",
+    )
+    tool1 = ToolMessage(content="r1", tool_call_id="call_1", name="get_stock_price", id="t1")
+    arg1 = AIMessage(content="Bear final", id="arg1")
+    tc2 = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_financials", "args": {"company": "AAPL"}, "id": "call_2", "type": "tool_call"}
+        ],
+        id="tc2",
+    )
+    tool2 = ToolMessage(content="r2", tool_call_id="call_2", name="get_financials", id="t2")
+    arg2 = AIMessage(content="Bull final", id="arg2")
+
+    messages = [
+        SystemMessage(content="s", id="s"),
+        HumanMessage(content="h", id="h"),
+        tc1,
+        tool1,
+        arg1,   # end of turn 1's argument
+        tc2,    # start of turn 2's tool call  ← consecutive assistant!
+        tool2,
+        arg2,
+    ]
+    merged = _merge_consecutive_assistant_messages(messages)
+
+    types = [m.type for m in merged]
+    for i in range(len(types) - 1):
+        assert not (types[i] == "ai" and types[i + 1] == "ai"), types
+    assert types == ["system", "human", "ai", "tool", "ai", "tool", "ai"]
+    # the merged assistant keeps arg1's content AND tc2's tool_calls
+    merged_assistant = merged[4]
+    assert isinstance(merged_assistant, AIMessage)
+    assert "Bear final" in merged_assistant.content
+    assert merged_assistant.tool_calls[0]["id"] == "call_2"
+
+
+async def test_researcher_no_consecutive_assistant_messages(settings):
+    """History crossing a turn boundary contains two consecutive assistant
+    messages (previous argument + next tool call); the researcher must merge
+    them before the list reaches the LLM (DeepSeek v4 rejects alternation
+    violations with HTTP 400)."""
+    state_messages = [
+        HumanMessage(content="Debate topic: AAPL", id="seed"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_stock_price",
+                    "args": {"company": "AAPL"},
+                    "id": "call_1",
+                    "type": "tool_call",
+                }
+            ],
+            id="tc1",
+        ),
+        ToolMessage(content="r1", tool_call_id="call_1", name="get_stock_price", id="t1"),
+        AIMessage(content="Bear final argument", id="arg1"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_financials",
+                    "args": {"company": "AAPL"},
+                    "id": "call_2",
+                    "type": "tool_call",
+                }
+            ],
+            id="tc2",
+        ),
+        ToolMessage(content="r2", tool_call_id="call_2", name="get_financials", id="t2"),
+        AIMessage(content="Bull final argument", id="arg2"),
+    ]
+    llm = CapturingLLM(response=AIMessage(content="Next round argument"))
+    node = make_researcher_node("bear", llm, TOOLS, settings)
+    await node(make_state(messages=state_messages, round=1))
+
+    seen_types = [m.type for m in llm.seen[0]]
+    for i in range(len(seen_types) - 1):
+        assert not (seen_types[i] == "ai" and seen_types[i + 1] == "ai"), seen_types
 
 
 class CapturingLLM:
