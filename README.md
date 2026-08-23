@@ -45,15 +45,21 @@ python tools/build_bear_bull_debate_zip.py
 `bear_bull_debate_src.zip` when the notebook prompts (or zip the whole project — the
 notebook auto-locates the package).
 
-OpenAI-compatible providers (DeepSeek / Qwen) are supported via `OPENAI_BASE_URL`:
+OpenAI-compatible providers (DeepSeek / Qwen) are supported via `OPENAI_BASE_URL`.
+**Important:** your API key must match the provider. A DeepSeek key sent to OpenAI's
+default endpoint is rejected with a 401 (`Incorrect API key provided`). Set all of:
 
 ```bash
+export OPENAI_API_KEY=sk-your-deepseek-key
 export OPENAI_BASE_URL=https://api.deepseek.com
 export BEAR_MODEL=deepseek-chat
 export BULL_MODEL=deepseek-chat
 export JUDGE_MODEL=deepseek-chat
 export SUMMARY_MODEL=deepseek-chat
 ```
+
+In the Colab notebook, just pick the provider in cell 3 (OpenAI / DeepSeek /
+Qwen DashScope) — it sets `OPENAI_BASE_URL` and the model names automatically.
 
 ## Test
 
